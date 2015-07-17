@@ -1,0 +1,145 @@
+EDA - AREAs
+========================================================
+
+Coupon_area _X.csv
+
+We know from the ER diagram that the ID is the key and the areas are children of the coupons.  The way to think about this is that this table shows you the areas that the coupon was delivered or shown in (not sure yet).  
+
+getwd()
+```{r load}
+library(plyr)
+library(ggplot2)
+#setwd("Code")
+CAtest <- read.csv("../Data/coupon_area_test.csv", stringsAsFactors=T)
+CAtrain <- read.csv("../Data/coupon_area_train.csv", stringsAsFactors=T)
+
+CAtest$SANAME <- CAtest$SMALL_AREA_NAME
+CAtest$PRNAME <- CAtest$PREF_NAME
+CAtrain$SANAME <- CAtrain$SMALL_AREA_NAME
+CAtrain$PRNAME <- CAtrain$PREF_NAME
+
+
+
+CAtest$SMALL_AREA_NAME <- as.factor(as.numeric(CAtest$SMALL_AREA_NAME))
+CAtest$PREF_NAME <- as.factor(as.numeric(CAtest$PREF_NAME))
+
+CAtrain$SMALL_AREA_NAME <- as.factor(as.numeric(CAtrain$SMALL_AREA_NAME))
+CAtrain$PREF_NAME <- as.factor(as.numeric(CAtrain$PREF_NAME))
+
+names(CAtest)[3] <- "CPID"
+names(CAtrain)[3] <- "CPID"
+
+```
+
+OK 3 variables, small area name, Prefecture, Coupon ID - interestingly coupons not users have locations
+
+```{r head}
+head(CAtrain)
+```
+
+
+All of the same prefectures are in both test and train *PHEW*
+
+```{r uniques}
+length(unique(CAtrain$PREF_NAME))
+length(unique(CAtest$PREF_NAME))
+unique(CAtrain$PREF_NAME)%in%unique(CAtest$PREF_NAME)
+
+length(unique(CAtrain$SMALL_AREA_NAME))
+length(unique(CAtest$SMALL_AREA_NAME))
+unique(CAtrain$SMALL_AREA_NAME)%in%unique(CAtest$SMALL_AREA_NAME)
+```
+
+Small areas don't mean much - there's one PREF that has 7 but otherwise one or two small areas
+
+```{r small areas to PREF }
+uniqueSA <- ddply(CAtrain, .(PREF_NAME), summarize, length(unique(SMALL_AREA_NAME)))
+plot(density(uniqueSA[,2]), main="density of small areas per Prefecture")
+```
+
+So coupon ID happens in multiple prefectures and multiple time in same prefectures... not a unique value... likely location tied to user...
+
+```{r coupons}
+length(unique(CAtrain$CPID))
+length(CAtrain$CPID)
+```
+
+looks like most of the activity is happening in row 25 - suspect tokyo.  rows 5&34 look like another metropolitan area.  When we go to small area names things look much more even...
+
+```{r coupons by pref}
+NumberC <- ddply(CAtrain, .(PREF_NAME), summarize, length(CPID))
+plot(density(NumberC[,2]), main="density of coupons per Prefecture")
+hist(NumberC[,2])
+NumberC
+
+NumberS <- ddply(CAtrain, .(SMALL_AREA_NAME), summarize, length(CPID))
+plot(density(NumberS[,2]), main="density of coupons per Prefecture")
+hist(NumberS[,2])
+NumberS
+
+```
+
+OK so in summary the primary key for the table is Small Area and Coupon ID together 
+
+```{r smallarea to coupon}
+UniqueID <- ddply(CAtrain, .(SMALL_AREA_NAME), summarize, length(unique(CPID)))
+UvN <- merge(NumberS,UniqueID, by="SMALL_AREA_NAME")
+names(UvN)<- c("SMALL_AREA_NAME","Num","Uniques")
+UvN$Num/UvN$Uniques
+UvN
+```
+
+
+Looking at how many areas a coupon has is interesting as well.  Here we can see the median and mean number of small areas per coupon.  Looks like a couple of different modes to the curve, maybe a low, medium, high distribution?  Correlation to an offer type?
+
+```{r coupon to small area}
+UniqueA <- ddply(CAtrain, .(CPID), summarize, length(unique(SMALL_AREA_NAME)))
+NumberA <- ddply(CAtrain, .(CPID), summarize, length((SMALL_AREA_NAME)))
+
+plot(density(NumberA[,2]))
+plot(density(log(NumberA[,2])), main=("log of small areas"))
+summary(NumberA)
+
+UvNA <- merge(NumberA,UniqueA, by="CPID")
+names(UvNA)<- c("CPID","Num","Uniques")
+all(UvNA$Num/UvNA$Uniques==1)
+
+
+
+```
+
+OK when we look at coupons run in "Area 25" we find they have a much larger distribution
+
+```{r explore areas}
+CPIDin25 <- CAtrain[CAtrain$PREF_NAME==unique(CAtrain$PREF_NAME)[25],"CPID"]
+NumberSA <- NumberA[NumberA$CPID%in%CPIDin25,]
+summary(NumberSA)
+
+plot(density(NumberSA[,2]))
+```
+
+We can use hierarchical clustering to understand something about which small areas are close together... based on the coupon ids they receive...  might give us a way to talk about distribution areas...or a type of feature for the data model.
+
+```{r small area proximity}
+tab <- table(CAtrain$CPID,CAtrain$SMALL_AREA_NAME)
+tab <- as.matrix(tab)
+tabSA <- t(tab)
+d <- dist(tabSA, "binary")
+plot(hclust(d))
+rowSums(tabSA)
+
+unique(CAtrain[CAtrain$PREF_NAME==25,"SMALL_AREA_NAME"])
+```
+
+
+
+
+Some features
+setwd("Code")
+```{r feature gen}
+
+
+
+
+```
+
