@@ -131,15 +131,9 @@ rowSums(tabSA)
 unique(CAtrain[CAtrain$PREF_NAME==25,"SMALL_AREA_NAME"])
 ```
 
+Potential Features:
+Market "Type"
+Coupon "Distribution" level
 
-
-
-Some features
-setwd("Code")
-```{r feature gen}
-
-
-
-
-```
+Maybe some opportunities to link distribution level to probability of clicking (does the website show you deals that are geographically relevant?)
 
