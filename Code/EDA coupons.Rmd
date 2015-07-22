@@ -80,6 +80,9 @@ pNAtab <- prop.table(NAtab,2)
 pNAtab
 WeekdayCats <- names(which(pNAtab[2,]<0.1))
 NoDayCats <- names(which(pNAtab[2,]>0.1))
+WeekdayCats
+NoDayCats
+
 ```
 
 str(CLtrain)
