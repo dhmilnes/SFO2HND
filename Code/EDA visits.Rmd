@@ -1,0 +1,88 @@
+EDA - Coupons
+========================================================
+
+```{r options, echo=FALSE, warning=FALSE, results='hide',message=FALSE}
+library(plyr)
+library(ggplot2)
+opts_chunk$set(cache=TRUE, autodep=TRUE, echo=T, warning=FALSE, message=FALSE)
+#setwd("Code")
+```
+
+Coupon List
+------------
+The coupon list is the list of coupons offered.  In the ER diagram it is called the 'Coupon Master'.
+
+```{r load list}
+CLtrain <- read.csv("../Data/coupon_list_train.csv", stringsAsFactors=F)
+
+CLtrain$DISPFROM <- as.Date(CLtrain$DISPFROM)
+CLtrain$DISPEND <- as.Date(CLtrain$DISPEND)
+CLtrain$VALIDFROM <- as.Date(CLtrain$VALIDFROM)
+CLtrain$VALIDEND <- as.Date(CLtrain$VALIDEND)
+
+summary(CLtrain)
+head(CLtrain)
+str(CLtrain)
+```
+
+So some observations:  There are three geographies involved 
+* where is the shop where the deal is offered located 
+* where the user lives
+* the distribution of the deal  
+
+We can translate the groups by the frequency order...
+
+Here we join them onto the data set.  the last table calculates the test set of coupons for reference and also to help us identify what genres don't require predictions. 
+
+```{r capsule}
+capsule <- read.csv("../Data/capsule.csv")
+cap <- table(CLtrain$CAPSULE_TEXT)
+cap[grep("^WEB",names(cap))]<- 43
+cap <- sort(cap, decreasing=T)
+capsule <- cbind(capsule, names(cap), cap)
+caps <- capsule[,c(2,3)]
+names(caps)<- c("Eng","CAPSULE_TEXT")
+CLtrain <- merge(CLtrain, caps, by="CAPSULE_TEXT")
+head(CLtrain)
+caps[caps$Eng=="Spa",]
+rownames(capsule) <- capsule$English.Translation
+names(capsule$cap) <- capsule$English.Translation
+capsule$CAPSULE_TEXT-capsule$cap
+sum(capsule$CAPSULE_TEXT-capsule$cap)
+```
+
+
+
+Descriptive statistics & quality check
+------------ 
+
+Each row is a unique coupon
+```{r uniques}
+length(CLtrain$COUPON_ID_hash)-length(unique(CLtrain$COUPON_ID_hash))
+```
+
+Distribution of deals by capsule text is wide in some cases but but medians are uniformly >50 discount.
+
+```{r graph capsule, fig.width=8, fig.height=7}
+ggplot(CLtrain)+geom_bar(aes(x=Eng))+ggtitle("distribution of Coupons by Capsule Text")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0))
+ggplot(CLtrain)+geom_boxplot(aes(x=Eng, y=PRICE_RATE))+ggtitle("price ranges by Capsule")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0))
+```
+
+Here we can see where the date NAs are popping up.  So we can group deals that have important restrictions on dates and which don't...
+
+
+```{r }
+NAtab <- table(is.na(CLtrain$USABLE_DATE_MON),CLtrain$Eng)
+NAtab
+pNAtab <- prop.table(NAtab,2)
+pNAtab
+WeekdayCats <- names(which(pNAtab[2,]<0.1))
+NoDayCats <- names(which(pNAtab[2,]>0.1))
+WeekdayCats
+NoDayCats
+
+```
+
+str(CLtrain)
