@@ -3,6 +3,7 @@ EDA - Coupons
 
 ```{r options, echo=FALSE, warning=FALSE, results='hide',message=FALSE}
 library(plyr)
+library(knitr)
 library(ggplot2)
 opts_chunk$set(cache=TRUE, autodep=TRUE, echo=T, warning=FALSE, message=FALSE)
 #setwd("Code")
@@ -14,6 +15,8 @@ The coupon list is the list of coupons offered.  In the ER diagram it is called 
 
 ```{r load list}
 CLtrain <- read.csv("../Data/coupon_list_train.csv", stringsAsFactors=F)
+CLtest <- read.csv("../Data/coupon_list_test.csv", stringsAsFactors=F)
+
 
 CLtrain$DISPFROM <- as.Date(CLtrain$DISPFROM)
 CLtrain$DISPEND <- as.Date(CLtrain$DISPEND)
@@ -23,6 +26,7 @@ CLtrain$VALIDEND <- as.Date(CLtrain$VALIDEND)
 summary(CLtrain)
 head(CLtrain)
 str(CLtrain)
+str(CLtest)
 ```
 
 So some observations:  There are three geographies involved 
@@ -30,9 +34,14 @@ So some observations:  There are three geographies involved
 * where the user lives
 * the distribution of the deal  
 
+```{r compare}
+CLtest$COUPON_ID_HASH %in% CLtrain$COUPON_ID_HASH
+CLtrain$COUPON_ID_HASH %in% CLtest$COUPON_ID_HASH
+```
+
 We can translate the groups by the frequency order...
 
-Here we join them onto the data set.  the last table calculates the test set of coupons for reference and also to help us identify what genres don't require predictions. 
+Here we join them onto the data set.  the last table calculates the test set of coupons for reference and also to help us identify what genres don't require predictions and the categories that we will need to do the most predictions for. 
 
 ```{r capsule}
 capsule <- read.csv("../Data/capsule.csv")
@@ -61,28 +70,51 @@ Each row is a unique coupon
 length(CLtrain$COUPON_ID_hash)-length(unique(CLtrain$COUPON_ID_hash))
 ```
 
-Distribution of deals by capsule text is wide in some cases but but medians are uniformly >50 discount.
+High Incidence of Delivery and Food deals, then hotels and spas 
 
-```{r graph capsule, fig.width=8, fig.height=7}
+```{r deal frequency, fig.width=8, fig.height=7}
 ggplot(CLtrain)+geom_bar(aes(x=Eng))+ggtitle("distribution of Coupons by Capsule Text")+
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0))
-ggplot(CLtrain)+geom_boxplot(aes(x=Eng, y=PRICE_RATE))+ggtitle("price ranges by Capsule")+
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0))
+
+```
+str(CLtrain)
+here is the distribution of prices 
+
+```{r face value pricing, fig.width=8, fig.height=7}
+ggplot(CLtrain)+geom_boxplot(aes(x=Eng, y=CATALOG_PRICE))+ggtitle("Face Value price ranges by Capsule")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0))+
+  coord_cartesian(ylim = c(0, 200000))
 ```
 
-Here we can see where the date NAs are popping up.  So we can group deals that have important restrictions on dates and which don't...
+Discount ranges vary greatly.  Across majority of the categories discount is at least 50%.
 
+```{r discount depth, fig.width=8, fig.height=7}
+ggplot(CLtrain)+geom_boxplot(aes(x=Eng, y=PRICE_RATE))+ggtitle("Discount Depth ranges by Capsule")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0))
+#  coord_cartesian(ylim = c(0, 200000))
+```
+
+Summarizing medians into a table
+
+```{r summary}
+ddply(CLtrain, .(Eng), summarize, 
+      TotalDeals = length(Eng),
+      medianFace = median(CATALOG_PRICE),
+      medianDiscount= median(PRICE_RATE),
+      medianOffered = median(DISCOUNT_PRICE))
+```
+
+### Exploring Days of Week offered
+A data feature is that there are NAs in the days of the week that are usable for coupons that don't have a usable date - i.e. delivery services.  We can group genres that have important restrictions on dates and which don't...
+
+Weekday Categories are impacted by the days of the week.  No Day Categories don't have day restrictions... they don't make sense.
 
 ```{r }
 NAtab <- table(is.na(CLtrain$USABLE_DATE_MON),CLtrain$Eng)
-NAtab
 pNAtab <- prop.table(NAtab,2)
-pNAtab
 WeekdayCats <- names(which(pNAtab[2,]<0.1))
 NoDayCats <- names(which(pNAtab[2,]>0.1))
 WeekdayCats
 NoDayCats
-
 ```
 
-str(CLtrain)
