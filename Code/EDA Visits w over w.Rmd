@@ -4,6 +4,7 @@ EDA - Visits Week Over Week
 ```{r options, echo=FALSE, warning=FALSE, results='hide',message=FALSE}
 library(plyr)
 library(ggplot2)
+library(lme4)
 
 opts_chunk$set(cache=TRUE, autodep=TRUE, echo=T, warning=FALSE, message=FALSE)
 #setwd("Code")
@@ -28,22 +29,44 @@ Caution:  ggplot will take a while to run
 
 ```{r explore}
 head(WV,15)
-#ggplot(WV, aes(x=visit_p, y=visit_c))+geom_point(alpha=.2, position="jitter")
+#ggplot(WV, aes(x=visit_p, y=visit_c))+geom_point(alpha=.1)
 ```
 
 ```{r table}
 tab <- table(WV$visit_p,WV$visit_c)
+prop.table(tab,1)
+image(prop.table(tab,1))
+```
 
-
+```{r train test}
+set.seed(2)
+obs <- sample(nrow(WV),nrow(WV)*.8)
+WVtrain <- WV[obs,]
+WVtest <- WV[-obs,]
+rm(WV)
+rm(obs)
 ```
 
 
 ```{r logistic on prior visit}
-pY <- glm(ret_flag~visit_p, data=WV, family="binomial")
+pY <- glm(ret_flag~visit_p, data=WVtrain, family="binomial")
 summary(pY)
-pred <- predict(pY, type="response")
-auc.fn(pred,WV$ret_flag)
+pred <- predict(pY, newdata=WVtest, type="response")
+auc.fn(pred,WVtest$ret_flag)
 
+rm(pY)
+rm(pred)
 ````
 
+Playing around trying a logistic mixed effects with intercept conditioned on users.  Taking a while.  Looks like AUC gets marginally better.  
 
+```{r logistic purchase on prior visit purch}
+test <- glmer(ret_flag~visit_p+(1|user_hash), data=WVtrain, family="binomial")
+summary(test)
+WVtestA <- WVtest[WVtest$user_hash %in% WVtrain$user_hash,]
+pred1 <- predict(test,newdata=WVtestA,type="response")
+auc.fn(pred1,WVtestA$ret_flag)
+
+rm(test)
+rm(pred1)
+```
