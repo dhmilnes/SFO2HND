@@ -27,9 +27,6 @@ def gethead():
         head = next(rows)
     return head
 
- 
-    
-
 def purchased_coupon_views_in_session(transactions): 
     session_stats = []    
     for trans in transactions:

@@ -1,0 +1,49 @@
+EDA - Visits Week Over Week
+========================================================
+
+```{r options, echo=FALSE, warning=FALSE, results='hide',message=FALSE}
+library(plyr)
+library(ggplot2)
+
+opts_chunk$set(cache=TRUE, autodep=TRUE, echo=T, warning=FALSE, message=FALSE)
+#setwd("Code")
+library(ROCR)
+source("Auc_Accuracy.R")
+
+```
+
+Visits
+------------
+Important for you to run weeklyvisit_manipulate.R first to create data file...
+
+```{r load list}
+load("../Data/visitspriorweek.Rdata")
+WV <- WVwithPrior
+rm(WVwithPrior)
+WV$ret_flag <- WV$visit_c!=0 
+
+```
+
+Caution:  ggplot will take a while to run
+
+```{r explore}
+head(WV,15)
+#ggplot(WV, aes(x=visit_p, y=visit_c))+geom_point(alpha=.2, position="jitter")
+```
+
+```{r table}
+tab <- table(WV$visit_p,WV$visit_c)
+
+
+```
+
+
+```{r logistic on prior visit}
+pY <- glm(ret_flag~visit_p, data=WV, family="binomial")
+summary(pY)
+pred <- predict(pY, type="response")
+auc.fn(pred,WV$ret_flag)
+
+````
+
+
