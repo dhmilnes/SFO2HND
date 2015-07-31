@@ -22,7 +22,8 @@ load("../Data/visitspriorweek.Rdata")
 WV <- WVwithPrior
 rm(WVwithPrior)
 WV$ret_flag <- WV$visit_c!=0 
-
+WV$ret_purch <- WV$purch_c!=0
+any(WV$visit_p==0)
 ```
 
 Caution:  ggplot will take a while to run
@@ -60,7 +61,7 @@ rm(pred)
 
 Playing around trying a logistic mixed effects with intercept conditioned on users.  Taking a while.  Looks like AUC gets marginally better.  
 
-```{r logistic purchase on prior visit purch}
+```{r logistic conditioned}
 test <- glmer(ret_flag~visit_p+(1|user_hash), data=WVtrain, family="binomial")
 summary(test)
 WVtestA <- WVtest[WVtest$user_hash %in% WVtrain$user_hash,]
@@ -70,3 +71,45 @@ auc.fn(pred1,WVtestA$ret_flag)
 rm(test)
 rm(pred1)
 ```
+
+
+OK looks like straight estimates - last visit and last purchase have some predictive ability
+
+```{r logistic on prior visit}
+pY <- glm(ret_purch~visit_p+purch_p, data=WVtrain, family="binomial")
+summary(pY)
+pred <- predict(pY, newdata=WVtest, type="response")
+auc.fn(pred,WVtest$ret_flag)
+
+rm(pY)
+rm(pred)
+````
+
+Playing around trying a logistic mixed effects with intercept conditioned on users.  Taking a while.  Looks like AUC gets marginally better.  
+
+```{r logistic purch conditioned}
+test <- glmer(ret_purch~visit_p+purch_p+(1|user_hash), data=WVtrain, family="binomial")
+summary(test)
+WVtestA <- WVtest[WVtest$user_hash %in% WVtrain$user_hash,]
+pred1 <- predict(test,newdata=WVtestA,type="response")
+auc.fn(pred1,WVtestA$ret_flag)
+
+rm(test)
+rm(pred1)
+```
+
+Let's generate purchase predictions given a visit
+
+```{r purchase given visit}
+prates <- ddply(WVtrain, .(user_hash), summarize, 
+          purch_session = sum(purch_c)/sum(visit_c),
+          prob_purch_given_visit = sum(ret_purch)/sum(ret_flag))
+
+
+head(prates,20)
+
+WVtrain[WVtrain$user_hash=="00035b86e6884589ec8d28fbf2fe7757",]
+
+
+```
+
