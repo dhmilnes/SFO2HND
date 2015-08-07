@@ -5,10 +5,13 @@ EDA - Visits Week Over Week
 library(plyr)
 library(ggplot2)
 library(lme4)
+library(glmnet)
+library(MASS)
+library(knitr)
 
 opts_chunk$set(cache=TRUE, autodep=TRUE, echo=T, warning=FALSE, message=FALSE)
 #setwd("Code")
-library(ROCR)
+library(ROCR) 
 source("Auc_Accuracy.R")
 
 ```
@@ -18,98 +21,85 @@ Visits
 Important for you to run weeklyvisit_manipulate.R first to create data file...
 
 ```{r load list}
-load("../Data/visitspriorweek.Rdata")
-WV <- WVwithPrior
-rm(WVwithPrior)
-WV$ret_flag <- WV$visit_c!=0 
-WV$ret_purch <- WV$purch_c!=0
-any(WV$visit_p==0)
+load("../Data/ProcessedVisits.Rdata")
 ```
 
-Caution:  ggplot will take a while to run
+Here is what our survival curve looks like - it is a cumulative distribution function
 
-```{r explore}
-head(WV,15)
-#ggplot(WV, aes(x=visit_p, y=visit_c))+geom_point(alpha=.1)
+```{r survival}
+curve <- ddply(train[!train$cohort,], 
+               .(week,weeks), summarize, 
+               numrow = length(user_hash),
+               noret = 1-sum(ret_flag)/numrow)
+
+ggplot(curve, aes(x=weeks, y=noret, color=week))+geom_point()+stat_smooth()+ggtitle("probability of no return by weeks since first")
+
 ```
 
-```{r table}
-tab <- table(WV$visit_p,WV$visit_c)
-prop.table(tab,1)
-image(prop.table(tab,1))
-```
+```{r fit gamma}
+criterion  <- function(par, week, fraction){ 
+                  cdf <- pgamma(week, shape=par[1], scale=par[2]) 
+                  sum((fraction-cdf)^2/cdf) # or some other function 
+                  } 
+cont <- optim(par=c(1,1),criterion, week=curve$weeks[curve$weeks], fraction=curve$noret[curve$weeks])
+cont$par
 
-```{r train test}
-set.seed(2)
-obs <- sample(nrow(WV),nrow(WV)*.8)
-WVtrain <- WV[obs,]
-WVtest <- WV[-obs,]
-rm(WV)
-rm(obs)
-```
+curve$ex <- pgamma(curve$weeks,shape=cont$par[1],scale=cont$par[2])
+head(curve)
 
+ggplot(curve,aes(x=weeks,y=noret))+geom_point()+geom_line(aes(y=ex))
+ggplot(curve,aes(x=noret,y=ex, color=weeks))+geom_point()+
+  scale_y_continuous(limit=c(0.4,.8))+
+  scale_x_continuous(limit=c(0.4,.8))
+
+
+look <- (ddply(curve, .(weeks), summarize, median = median(noret), avg = mean(noret)))
+look$gam <- with(look, pgamma(weeks,shape=cont$par[1],scale=cont$par[2]))
+head(look,10)
+tail(look,10)
+look$ret <- 1-look$gam 
+merged <- look[,c("weeks","ret","gam")]
+train <- merge(train,merged)
+test <- merge(test,merged)
+submit <- merge(submit,merged)
+```
 
 ```{r logistic on prior visit}
-pY <- glm(ret_flag~visit_p, data=WVtrain, family="binomial")
-summary(pY)
-pred <- predict(pY, newdata=WVtest, type="response")
-auc.fn(pred,WVtest$ret_flag)
 
-rm(pY)
-rm(pred)
-````
+head(train)
 
-Playing around trying a logistic mixed effects with intercept conditioned on users.  Taking a while.  Looks like AUC gets marginally better.  
+unique(train$flag_first_week)
 
-```{r logistic conditioned}
-test <- glmer(ret_flag~visit_p+(1|user_hash), data=WVtrain, family="binomial")
-summary(test)
-WVtestA <- WVtest[WVtest$user_hash %in% WVtrain$user_hash,]
-pred1 <- predict(test,newdata=WVtestA,type="response")
-auc.fn(pred1,WVtestA$ret_flag)
-
-rm(test)
-rm(pred1)
-```
-
-
-OK looks like straight estimates - last visit and last purchase have some predictive ability
-
-```{r logistic on prior visit}
-pY <- glm(ret_purch~visit_p+purch_p, data=WVtrain, family="binomial")
-summary(pY)
-pred <- predict(pY, newdata=WVtest, type="response")
-auc.fn(pred,WVtest$ret_flag)
-
-rm(pY)
-rm(pred)
-````
-
-Playing around trying a logistic mixed effects with intercept conditioned on users.  Taking a while.  Looks like AUC gets marginally better.  
-
-```{r logistic purch conditioned}
-test <- glmer(ret_purch~visit_p+purch_p+(1|user_hash), data=WVtrain, family="binomial")
-summary(test)
-WVtestA <- WVtest[WVtest$user_hash %in% WVtrain$user_hash,]
-pred1 <- predict(test,newdata=WVtestA,type="response")
-auc.fn(pred1,WVtestA$ret_flag)
-
-rm(test)
-rm(pred1)
-```
-
-Let's generate purchase predictions given a visit
-
-```{r purchase given visit}
-prates <- ddply(WVtrain, .(user_hash), summarize, 
-          purch_session = sum(purch_c)/sum(visit_c),
-          prob_purch_given_visit = sum(ret_purch)/sum(ret_flag))
-
-
-head(prates,20)
-
-WVtrain[WVtrain$user_hash=="00035b86e6884589ec8d28fbf2fe7757",]
-
+visit.glm <- glm(ret_flag~visit_p+purch_p+cohort+gam-1,train, family="binomial")
+summary(visit.glm)
+pred.visit.glm <- predict(visit.glm, newdata=test, type="response")
+auc.fn(pred.visit.glm,test$ret_flag)
+plotauc.fn(pred.visit.glm,test$ret_flag)
+predic <- prediction(pred.visit.glm,test$ret_flag)
+acc.perf <- performance(predic, "acc")
+ind = which.max( slot(acc.perf, "y.values")[[1]] )
+acc = slot(acc.perf, "y.values")[[1]][ind]
+cutoff = slot(acc.perf, "x.values")[[1]][ind]
+print(c(accuracy= acc, cutoff = cutoff))
+hist(pred.visit.glm)
 
 ```
 
+
+
+```{r submit}
+pred.visit.submit <- predict(visit.glm, newdata=submit, type="response")
+visited.submit <- pred.visit.submit>cutoff
+submit.df <- data.frame(submit$user_hash,visited.submit,pred.visit.submit)
+names(submit.df) <- c("user_hash","type","pred.visit")
+nrow(submit)
+```
+
+```{r cosine similarlity}
+cosine <- read.csv("../Data/cosine_sim.csv",stringsAsFactors=F)
+submitted <- merge(cosine,submit.df, by.x="USER_ID_hash",by.y="user_hash", all.x=T)
+submitted$type[is.na(submitted$type)]<-F
+submitted[submitted$type==F,"PURCHASED_COUPONS"]<-""
+submitted <- submitted[,1:2]
+write.csv(submitted, "../Data/cosine_visit.csv",row.names=FALSE)
+```

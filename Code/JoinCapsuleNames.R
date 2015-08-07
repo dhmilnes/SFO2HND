@@ -14,3 +14,10 @@ CLtrain <- merge(CLtrain, caps, by="CAPSULE_TEXT")
 CLtest <- merge(CLtest, caps, by="CAPSULE_TEXT")
 save(CLtrain,CLtest,file="../Data/CLwithEng.Rdata")
 
+masterg <- rbind(CLtrain,CLtest)
+str(masterg)
+masterg <- masterg[,c("COUPON_ID_hash","Eng")]
+
+masterg
+
+write.csv(masterg,"../Data/genrelookup.csv")
