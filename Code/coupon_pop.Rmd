@@ -1,0 +1,149 @@
+Exploring transaction data
+========================================================
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring web pages (click the **Help** toolbar button for more details on using R Markdown).
+
+When you click the **Knit HTML** button a web page will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r options, echo=FALSE, warning=FALSE, results='hide',message=FALSE}
+library(plyr)
+library(ggplot2)
+library(knitr)
+library(reshape2)
+library(rpart)
+library(randomForest)
+
+
+opts_chunk$set(cache=TRUE, autodep=TRUE, echo=T, warning=FALSE, message=FALSE)
+#setwd("Code")
+
+```
+
+```{r load data}
+#setwd("Code")
+cpltr <- read.csv("../Data/coupon_list_train.csv", stringsAsFactors=F)
+cplte <- read.csv("../Data/coupon_list_test.csv", stringsAsFactors=F)
+cpdtr <- read.csv("../Data/coupon_detail_train.csv", stringsAsFactors=F)
+cpatr <- read.csv("../Data/coupon_area_train.csv", stringsAsFactors=F)
+cpat3 <- read.csv("../Data/coupon_area_test.csv", stringsAsFactors=F)
+capsule <- read.csv("../Data/genrelookup.csv")
+load("../Data/cpag.Rdata")
+cpag$distgroup <- as.factor(cpag$distgroup)
+```
+
+```{r review}
+str(cpdtr)
+str(cpltr)
+```
+
+```{r create data}
+sales <- ddply(cpdtr, .(COUPON_ID_hash), summarize, sales=length(unique(USER_ID_hash)))
+data <- merge(cpltr,sales, all.x=T)
+data$DISPPERIOD[data$DISPPERIOD==0]<- 1
+data$sales[is.na(data$sales)]<- 0.01 # have to remove zero sales when we move to daily sales and take the log 
+data$lndsales <- with(data, log(sales/DISPPERIOD))  # log of daily sales new dependent variable
+data$CATALOG_PRICE <- log(data$CATALOG_PRICE)
+data$DISCOUNT_PRICE <- log(data$DISCOUNT_PRICE)
+data <- data[data$DISCOUNT_PRICE != -Inf,]
+data <- merge(data,cpag)
+data <- merge(data,capsule[,2:3])
+usables <- grep("USABLE",names(data))
+data[,usables][is.na(data[,usables])]<-1
+data <- ddply(data, .(Eng),mutate, center_discount=PRICE_RATE/mean(PRICE_RATE))
+data$validflag <- as.numeric(is.na(data$VALIDPERIOD))
+data$VALIDPERIOD[is.na(data$VALIDPERIOD)] <- 0
+keepcols <- c("COUPON_ID_hash","center_discount","CATALOG_PRICE","DISCOUNT_PRICE","DISPPERIOD",
+              "VALIDPERIOD","validflag","USABLE_DATE_MON","USABLE_DATE_TUE","USABLE_DATE_WED",
+              "USABLE_DATE_THU","USABLE_DATE_FRI","USABLE_DATE_SAT","USABLE_DATE_SUN",
+              "USABLE_DATE_HOLIDAY","USABLE_DATE_BEFORE_HOLIDAY",
+              "lndsales","distgroup","Eng")
+dat <- data[,keepcols]
+dat <- dat[complete.cases(data),]
+str(dat)
+```
+
+```{r prep estimate}
+estimate <- merge(cplte,cpag, all.x=T)
+estimate <- merge(estimate,capsule[,2:3])
+eusables <- grep("USABLE",names(estimate))
+estimate[,usables][is.na(estimate[,usables])]<-1
+estimate$CATALOG_PRICE <- log(estimate$CATALOG_PRICE)
+estimate$DISCOUNT_PRICE <- log(estimate$DISCOUNT_PRICE)
+estimate <- ddply(estimate, .(Eng),mutate, center_discount=PRICE_RATE/mean(PRICE_RATE))
+estimate$validflag <- as.numeric(is.na(estimate$VALIDPERIOD))
+estimate$VALIDPERIOD[is.na(estimate$VALIDPERIOD)] <- 0
+est <- estimate[,names(estimate) %in% keepcols]
+```
+
+```{r ggplots}
+ggplot(data, aes(x=lndsales))+stat_density(aes(fill=Eng), color="black", alpha=0.5,
+                                                                        position="identity")
+
+ddply(data, .(Eng), summarize, sales = sum(sales))
+
+```
+
+```{r testtrain}
+set.seed(1)
+train.set <- sample(nrow(dat),.8*nrow(dat))
+train <- dat[train.set,]
+test <- dat[-train.set,]
+ytr <- train$lndsales
+yte <- test$lndsales
+rm(capsule,cpag,cpat3,cpatr,cpdtr,cplte,cpltr)
+# #issue checking
+# any(is.na(train))
+# any(train==Inf)
+# any(train==-Inf)
+# lapply(train, FUN=function(x) {any(x==Inf)})
+# lapply(estimate, FUN=function(x) {any(x==-Inf)})
+
+```
+
+
+
+```{r tree}
+names(train)=="lndsales"
+form <- as.formula(paste("lndsales~",
+              paste(names(train)[-grep("lnds|COUPON_ID_hash",names(train))],sep="~", collapse="+"),
+              collapse="~"))
+    form      
+ntree <- rpart(form, train)
+pnt <- predict(ntree, newdata=test)
+sum((pnt-yte)^2)/length(yte) #MSE
+plot(ntree)
+text(ntree)
+ntree
+rm(ntree)
+```
+
+
+```{lm}
+nlm <- lm(form,train)
+summary(nlm)
+plot(nlm)
+pnlm <- predict(nlm,newdata=test)
+sum((pnlm-yte)^2)/length(yte)
+rm(nlm)
+```
+
+```{r randomforest}
+rf <- randomForest(form, data=train, ntree=100)
+prfoos <- predict(rf, newdata=test)
+sum((prfoos-yte)^2)/length(yte)
+plot(rf)
+varImpPlot(rf)
+prfest <- predict(rf, newdata=estimate)
+
+estimate <- data.frame(estimate,prfest)
+coupons <- paste(head(estimate[order(prfest, decreasing=T),"COUPON_ID_hash"],10), collapse=" ")
+```
+
+
+```{r naive submission}
+users <- read.csv("../Data/user_list.csv")
+sub<-data.frame(users$USER_ID_hash,coupons)
+names(sub) <- c("USER_ID_hash","PURCHASED_COUPONS")
+write.csv(sub,"../Data/naivepurch.csv",row.names=F)
+subest <- estimate[order(prfest,decreasing=T),c("COUPON_ID_hash","prfest"),]
+write.csv(subest,"../Data/expectedpop.cs")
