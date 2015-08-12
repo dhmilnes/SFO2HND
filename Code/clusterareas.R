@@ -14,7 +14,7 @@ rm(cpa, cpate,cpatr)
 hddu <- hclust(ddu,method="ward.D")
 #plot(hddu)
 #rect.hclust(hddu, k=20)  ##visually selected k, no real science
-cuts <- cutree(hddu, k=20)
+cuts <- cutree(hddu, k=10)
 duc <- cbind(du,cuts)
 f <- merge(d,duc)
 

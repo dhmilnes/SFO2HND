@@ -21,11 +21,11 @@ opts_chunk$set(cache=TRUE, autodep=TRUE, echo=T, warning=FALSE, message=FALSE)
 
 ```{r load data}
 #setwd("Code")
-cpltr <- read.csv("../Data/coupon_list_train.csv", stringsAsFactors=F)
-cplte <- read.csv("../Data/coupon_list_test.csv", stringsAsFactors=F)
-cpdtr <- read.csv("../Data/coupon_detail_train.csv", stringsAsFactors=F)
-cpatr <- read.csv("../Data/coupon_area_train.csv", stringsAsFactors=F)
-cpat3 <- read.csv("../Data/coupon_area_test.csv", stringsAsFactors=F)
+cpltr <- read.csv("../Data/coupon_list_train.csv", stringsAsFactors=T)
+cplte <- read.csv("../Data/coupon_list_test.csv", stringsAsFactors=T)
+cpdtr <- read.csv("../Data/coupon_detail_train.csv", stringsAsFactors=T)
+cpatr <- read.csv("../Data/coupon_area_train.csv", stringsAsFactors=T)
+cpat3 <- read.csv("../Data/coupon_area_test.csv", stringsAsFactors=T)
 capsule <- read.csv("../Data/genrelookup.csv")
 load("../Data/cpag.Rdata")
 cpag$distgroup <- as.factor(cpag$distgroup)
@@ -33,11 +33,16 @@ cpag$distgroup <- as.factor(cpag$distgroup)
 
 ```{r review}
 str(cpdtr)
+cpdtr$I_DATE <- as.Date(as.character(cpdtr$I_DATE))
 str(cpltr)
+cpltr$DISPFROM <- as.Date(as.character(cpltr$DISPFROM))
+```
+
+```{r process sales}
+sales <- ddply(cpdtr, .(COUPON_ID_hash), summarize, sales=length(unique(USER_ID_hash)))
 ```
 
 ```{r create data}
-sales <- ddply(cpdtr, .(COUPON_ID_hash), summarize, sales=length(unique(USER_ID_hash)))
 data <- merge(cpltr,sales, all.x=T)
 data$DISPPERIOD[data$DISPPERIOD==0]<- 1
 data$sales[is.na(data$sales)]<- 0.01 # have to remove zero sales when we move to daily sales and take the log 
@@ -57,39 +62,36 @@ keepcols <- c("COUPON_ID_hash","center_discount","CATALOG_PRICE","DISCOUNT_PRICE
               "USABLE_DATE_THU","USABLE_DATE_FRI","USABLE_DATE_SAT","USABLE_DATE_SUN",
               "USABLE_DATE_HOLIDAY","USABLE_DATE_BEFORE_HOLIDAY",
               "lndsales","distgroup","Eng")
-dat <- data[,keepcols]
-dat <- dat[complete.cases(data),]
-str(dat)
+train <- data[data$DISPFROM <"2012-06-17",keepcols]
+train <- train[complete.cases(train),]
+est <- data[data$DISPFROM >="2012-06-17",keepcols]
+est <- est[complete.cases(est),]
+
 ```
 
 ```{r prep estimate}
-estimate <- merge(cplte,cpag, all.x=T)
-estimate <- merge(estimate,capsule[,2:3])
-eusables <- grep("USABLE",names(estimate))
-estimate[,usables][is.na(estimate[,usables])]<-1
-estimate$CATALOG_PRICE <- log(estimate$CATALOG_PRICE)
-estimate$DISCOUNT_PRICE <- log(estimate$DISCOUNT_PRICE)
-estimate <- ddply(estimate, .(Eng),mutate, center_discount=PRICE_RATE/mean(PRICE_RATE))
-estimate$validflag <- as.numeric(is.na(estimate$VALIDPERIOD))
-estimate$VALIDPERIOD[is.na(estimate$VALIDPERIOD)] <- 0
-est <- estimate[,names(estimate) %in% keepcols]
+test <- merge(cplte,cpag, all.x=T)
+test <- merge(test,capsule[,2:3])
+tusables <- grep("USABLE",names(test))
+test[,tusables][is.na(test[,tusables])]<-1
+test$CATALOG_PRICE <- log(test$CATALOG_PRICE)
+test$DISCOUNT_PRICE <- log(test$DISCOUNT_PRICE)
+test <- ddply(test, .(Eng),mutate, center_discount=PRICE_RATE/mean(PRICE_RATE))
+test$validflag <- as.numeric(is.na(test$VALIDPERIOD))
+test$VALIDPERIOD[is.na(test$VALIDPERIOD)] <- 0
+te <- test[,names(test) %in% keepcols]
 ```
 
 ```{r ggplots}
 ggplot(data, aes(x=lndsales))+stat_density(aes(fill=Eng), color="black", alpha=0.5,
                                                                         position="identity")
-
 ddply(data, .(Eng), summarize, sales = sum(sales))
-
 ```
 
 ```{r testtrain}
-set.seed(1)
-train.set <- sample(nrow(dat),.8*nrow(dat))
-train <- dat[train.set,]
-test <- dat[-train.set,]
 ytr <- train$lndsales
-yte <- test$lndsales
+yes <- est$lndsales
+yte <- te$lndsales
 rm(capsule,cpag,cpat3,cpatr,cpdtr,cplte,cpltr)
 # #issue checking
 # any(is.na(train))
@@ -109,8 +111,8 @@ form <- as.formula(paste("lndsales~",
               collapse="~"))
     form      
 ntree <- rpart(form, train)
-pnt <- predict(ntree, newdata=test)
-sum((pnt-yte)^2)/length(yte) #MSE
+pnt <- predict(ntree, newdata=est)
+sum((pnt-yes)^2)/length(yes) #MSE
 plot(ntree)
 text(ntree)
 ntree
@@ -129,21 +131,33 @@ rm(nlm)
 
 ```{r randomforest}
 rf <- randomForest(form, data=train, ntree=100)
-prfoos <- predict(rf, newdata=test)
-sum((prfoos-yte)^2)/length(yte)
+prfoos <- predict(rf, newdata=est)
+sum((prfoos-yes)^2)/length(yes)
 plot(rf)
 varImpPlot(rf)
-prfest <- predict(rf, newdata=estimate)
+prfte <- predict(rf, newdata=te)
+prfest <- predict(rf, newdata=est)
+test <- data.frame(test,prfte)
+estimate <- data.frame(est,prfest)
+```
 
-estimate <- data.frame(estimate,prfest)
-coupons <- paste(head(estimate[order(prfest, decreasing=T),"COUPON_ID_hash"],10), collapse=" ")
+```{r prep coupons}
+coupons_est <- paste(head(estimate[order(prfest, decreasing=T),"COUPON_ID_hash"],100), collapse=" ")
+coupons_te <- paste(head(test[order(prfte, decreasing=T),"COUPON_ID_hash"],100), collapse=" ")
+save(coupons_te, file="../Data/NaiveCoupon.Rdata")
 ```
 
 
 ```{r naive submission}
 users <- read.csv("../Data/user_list.csv")
-sub<-data.frame(users$USER_ID_hash,coupons)
+sub<-data.frame(users$USER_ID_hash,coupons_te)
 names(sub) <- c("USER_ID_hash","PURCHASED_COUPONS")
 write.csv(sub,"../Data/naivepurch.csv",row.names=F)
-subest <- estimate[order(prfest,decreasing=T),c("COUPON_ID_hash","prfest"),]
-write.csv(subest,"../Data/expectedpop.cs")
+```
+
+
+```{r prepfor ensemble}
+cp_pop_est <- estimate[order(prfest,decreasing=T),c("COUPON_ID_hash","prfest"),]
+cp_pop_te  <- test[order(prfte,decreasing=T),c("COUPON_ID_hash","prfte"),]
+write.csv(cp_pop_est,"../Data/expectedpopest.csv")
+write.csv(cp_pop_te,"../Data/expectedpoptest.csv")
