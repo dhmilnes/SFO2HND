@@ -6,12 +6,12 @@ library(ggplot2)
 library(glmnet)
 library(MASS)
 library(reshape2)
+#setwd("Code")
 source("Auc_Accuracy.R")
 source("prepsubfn.R")
-
 cpltr <- read.csv("../Data/coupon_list_train.csv", stringsAsFactors=T)
 cplte <- read.csv("../Data/coupon_list_test.csv", stringsAsFactors=T)
-cpdtr <- read.csv("../Data/coupon_detail_train.csv", stringsAsFactors=T)
+cpvtr <- read.csv("../Data/user_coupon_impressions_train.csv", stringsAsFactors=T)
 user <- read.csv("../Data/user_list.csv", stringsAsFactors=T)
 capsule <- read.csv("../Data/genrelookup.csv")
 load("../Data/cpag.Rdata")
@@ -34,7 +34,7 @@ usamp <- sample(nrow(user),400)
 
 #####  Similarity 
 
-train <- merge(cpdtr,cpl_tr)
+train <- merge(cpvtr,cpl_tr)
 train <- merge(train,cpag)
 cols <- c("COUPON_ID_hash","USER_ID_hash",
           "GENRE_NAME","DISCOUNT_PRICE","PRICE_RATE",
@@ -51,6 +51,8 @@ cplte <- merge(cplte,cpag)
 cpchar <- cplte[,cols]
 cpest <- cplest[,cols]
 train <- rbind(train,cpchar,cpest)
+
+str(train)
 
 
 #NA imputation
@@ -81,10 +83,12 @@ W <- as.matrix(Diagonal(x=c(rep(3,13), rep(1,1), rep(0.2,1), rep(0,9), rep(1,47)
 score_te <-  as.matrix(uchar[,2:ncol(uchar)]) %*% W %*% t(as.matrix(test[,2:ncol(test)]))
 score_est <- as.matrix(uchar[,2:ncol(uchar)]) %*% W %*% t(as.matrix(est[,2:ncol(est)]))
 
+length(grep("distgroup",names(uchar)))
+
 rownames(score_te)<- uchar$USER_ID_hash
 colnames(score_te)<- test$COUPON_ID_hash
 
-topscores_te <- do.call(rbind,
+topscores_te_visit <- do.call(rbind,
   lapply(1:nrow(uchar), FUN=function(user){
     top20 <- sort(score_te[user,],decreasing=T)[1:20]
     cps <- melt(top20)
@@ -99,7 +103,7 @@ topscores_te <- do.call(rbind,
 rownames(score_est)<- uchar$USER_ID_hash
 colnames(score_est)<- est$COUPON_ID_hash
 
-topscores_est <- do.call(rbind,
+topscores_est_visit <- do.call(rbind,
                         lapply(1:nrow(uchar), FUN=function(user){
                           top20 <- sort(score_est[user,],decreasing=T)[1:20]
                           cps <- melt(top20)
@@ -112,10 +116,11 @@ topscores_est <- do.call(rbind,
 )
 
 
-save(topscores_est, topscores_te, file="../Data/cosinepurchscores.Rdata")
+save(topscores_est_visit, file="../Data/cosinevisitestcores.Rdata")
+save(topscores_te_visit, file="../Data/cosinevisittecores.Rdata")
 
-sub <- prepsub(topscores_te,"USER_ID_hash","COUPON_ID_hash","score", user)
+sub <- prepsub(topscores_te_visit,"USER_ID_hash","COUPON_ID_hash","score", user)
 load("../Data/NaiveCoupon.Rdata")
 sub[,2]<- as.character(sub[,2])
 sub[is.na(sub$PURCHASED_COUPONS),"PURCHASED_COUPONS"]<- coupons_te
-write.csv(sub, file="../Data/submitwcosine.csv", row.names=F)
+write.csv(sub, file="../Data/submitvcosine.csv", row.names=F)

@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri Jul 24 13:25:29 2015
-
 @author: dmilnes
-
 Goals:  Very Simple Weekly Visits
 """
 
@@ -73,5 +71,5 @@ flat = flatten_user_coupon(couponhash)
 
 with open(writefile, 'wb') as csvout:
     writer = csv.writer(csvout)
-    writer.writerow(['user_hash','coupon_hash','impressions'])
+    writer.writerow(['USER_ID_hash','COUPON_ID_hash','impressions'])
     writer.writerows(flat)
