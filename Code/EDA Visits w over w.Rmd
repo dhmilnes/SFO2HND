@@ -4,7 +4,7 @@ EDA - Visits Week Over Week
 ```{r options, echo=FALSE, warning=FALSE, results='hide',message=FALSE}
 library(plyr)
 library(ggplot2)
-library(lme4)
+
 library(glmnet)
 library(MASS)
 library(knitr)
@@ -83,6 +83,7 @@ cutoff = slot(acc.perf, "x.values")[[1]][ind]
 print(c(accuracy= acc, cutoff = cutoff))
 hist(pred.visit.glm)
 
+estvisit<- data.frame(test,pred.visit.glm)
 ```
 
 
@@ -101,5 +102,5 @@ submitted <- merge(cosine,submit.df, by.x="USER_ID_hash",by.y="user_hash", all.x
 submitted$type[is.na(submitted$type)]<-F
 submitted[submitted$type==F,"PURCHASED_COUPONS"]<-""
 submitted <- submitted[,1:2]
-write.csv(submitted, "../Data/cosine_visit.csv",row.names=FALSE)
+write.csv(submitted, "../Data/cosine_visit_ex_non_visit.csv",row.names=FALSE)
 ```

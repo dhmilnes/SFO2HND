@@ -44,7 +44,7 @@ train <- merge(train,cpag)
 ###### TO ADD ITEM COUNT:  ADD
 
 cols <- c("COUPON_ID_hash","USER_ID_hash",
-          "GENRE_NAME","DISCOUNT_PRICE","PRICE_RATE",
+          "GENRE_NAME","CAPSULE_TEXT","DISCOUNT_PRICE","PRICE_RATE",
           "USABLE_DATE_MON","USABLE_DATE_TUE","USABLE_DATE_WED","USABLE_DATE_THU",
           "USABLE_DATE_FRI","USABLE_DATE_SAT","USABLE_DATE_SUN","USABLE_DATE_HOLIDAY",
           "USABLE_DATE_BEFORE_HOLIDAY","ken_name","small_area_name","distgroup")
@@ -69,13 +69,16 @@ train[is.na(train)] <- 1
 train$DISCOUNT_PRICE <- 1/log10(train$DISCOUNT_PRICE)
 train$PRICE_RATE <- log10(train$PRICE_RATE*100+1)
 
-#trial  GENRE_NAME:distgroup+DISCOUNT_PRICE+PRICE_RATE
-
 #convert the factors to columns of 0's and 1's
-train <- cbind(train[,c(1,2)],model.matrix(~ .-1,
+train <- cbind(train[,c(1,2)],model.matrix(~ -1 + GENRE_NAME + DISCOUNT_PRICE +
+                                             PRICE_RATE + USABLE_DATE_FRI + USABLE_DATE_SAT + USABLE_DATE_SUN +
+                                             USABLE_DATE_HOLIDAY + USABLE_DATE_BEFORE_HOLIDAY + 
+                                             ken_name + small_area_name + CAPSULE_TEXT + GENRE_NAME:ken_name,
                                            train[,-c(1,2)], 
                                            contrasts.arg=lapply(train[,names(which(sapply(train[,-c(1,2)], is.factor)))], contrasts, contrasts=FALSE)))
-                                           
+
+
+                         
 #separate the test from train
 test <- train[train$USER_ID_hash=="dummyuser",]
 test <- test[,-2]
@@ -84,8 +87,6 @@ est <- est[,-2]
 train <- train[!(train$USER_ID_hash %in% c("dummyuser","estimateduser")),]
 
 #data frame of user characteristics
-
-dupes <- train[,-1]
 
 uchar <- train[,-1] %>% group_by(USER_ID_hash) %>% summarise_each(funs(mean))
 
@@ -96,17 +97,17 @@ uchar$PRICE_RATE <- 1
 
 save(est,uchar,estcps, file="../Data/cosine.Rdata")
 require(Matrix)
-weights <- c(3,1,0,0,3,4,3)  #(3,1,0,0,3,4,3) c(3,1,0,0,3,4,0)
-
+weights <- c(3,1,0,0,1,4,0,2) #(3,1,0,0,3,4,3) c(3,1,0,0,3,4,0)
 #Genre 13, Discount_Price, Price_rate, Usable_Dates, ken_name, small_area_name
-reps <- c(13,1,1,9,47,55,10)
-W<- Diagonal(x=rep(weights, reps))
+reps <- c(13,1,1,5,47,55,25,611)
 
+length(weights)==length(reps)
+
+W<- Diagonal(x=rep(weights, reps))
 score_te <-  as.matrix(uchar[,2:ncol(uchar)]) %*% W %*% t(as.matrix(test[,2:ncol(test)]))*.95
 score_est <- as.matrix(uchar[,2:ncol(uchar)]) %*% W %*% t(as.matrix(est[,2:ncol(est)]))*.95
 
 #### Create Estimate Scores
-
 raw_score_est <- as.data.frame(as.matrix(score_est))
 colnames(raw_score_est)<- est$COUPON_ID_hash
 raw_score_est$USER_ID_hash <- uchar$USER_ID_hash

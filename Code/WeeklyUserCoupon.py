@@ -48,21 +48,26 @@ def user_coupon(filename):
         for line in content:
             user = line['USER_ID_hash']
             coupon = line['VIEW_COUPON_ID_hash']
-            couponentry = {coupon:1}            
+            if line['PURCHASEID_hash']=='': 
+                purchase = 0 
+            else: 
+                purchase = 1
+            couponentry = {coupon:[1,purchase]}            
             userentry = {user:couponentry}
             if not user in usercouponhash:
                 usercouponhash.update(userentry)
             elif not coupon in usercouponhash[user]:
                 usercouponhash[user].update(couponentry)
             else:
-                usercouponhash[user][coupon]+=1
+                usercouponhash[user][coupon][0]+=1
+                usercouponhash[user][coupon][1]+=purchase
     return usercouponhash
 
 def flatten_user_coupon(couponhash):
     flattened = []
     for user, userinfo in couponhash.items():
         for coupon, value in userinfo.items():
-            flattened.append([user,coupon,value])
+            flattened.append([user,coupon,value[0],value[1]])
     return flattened
 
 header = gethead(visits)     
@@ -71,5 +76,5 @@ flat = flatten_user_coupon(couponhash)
 
 with open(writefile, 'wb') as csvout:
     writer = csv.writer(csvout)
-    writer.writerow(['USER_ID_hash','COUPON_ID_hash','impressions'])
+    writer.writerow(['USER_ID_hash','COUPON_ID_hash','impressions','purchases'])
     writer.writerows(flat)
